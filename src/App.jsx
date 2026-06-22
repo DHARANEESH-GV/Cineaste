@@ -425,6 +425,53 @@ body {
   box-shadow: 0 15px 40px rgba(0,0,0,0.4);
 }
 
+.media-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  gap: 0.75rem;
+}
+
+.media-empty-icon {
+  font-size: 2rem;
+  opacity: 0.3;
+}
+
+.media-empty-text {
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.media-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  gap: 0.5rem;
+}
+
+.media-loading-dot {
+  width: 4px;
+  height: 4px;
+  background-color: var(--accent);
+  border-radius: 50%;
+  animation: mediaPulse 1.4s ease-in-out infinite;
+}
+
+.media-loading-dot:nth-child(2) { animation-delay: 0.2s; }
+.media-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes mediaPulse {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
 .video-container {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -783,6 +830,52 @@ textarea.form-input {
   font-family: var(--font-sans);
   letter-spacing: 0.1em;
   z-index: 20;
+}
+
+.torrent-btn {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid rgba(238, 238, 238, 0.15);
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  transition: all 0.3s ease;
+  border-radius: 2px;
+}
+
+.torrent-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.quality-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  transition: all 0.3s ease;
+}
+
+.quality-btn:hover {
+  border-color: var(--accent);
+  background: rgba(227, 95, 33, 0.1);
+}
+
+.quality-size {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
 }
 
 .star-rating {
@@ -1185,7 +1278,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem('cinerama_reviews');
       return saved ? JSON.parse(saved) : [];
-    } catch (e) {
+    } catch (_) {
       return [];
     }
   });
@@ -1226,22 +1319,39 @@ export default function App() {
 
   const TMDB_KEY = import.meta.env.VITE_TMDB_KEY;
 
-  const fetchTMDBMedia = async (imdbID) => {
+  const fetchTMDBMedia = async (movie) => {
     setTmdbLoading(true);
     setTmdbMedia(null);
     try {
-      const findRes = await fetch(`https://api.themoviedb.org/3/find/${imdbID}?external_source=imdb_id&api_key=${TMDB_KEY}`);
-      const findData = await findRes.json();
-      
       let tmdbId = null;
-      if (findData.movie_results && findData.movie_results.length > 0) {
-        tmdbId = findData.movie_results[0].id;
-      } else if (findData.tv_results && findData.tv_results.length > 0) {
-        tmdbId = findData.tv_results[0].id;
+      let type = 'movie';
+
+      if (movie.id && movie.id.startsWith('tt')) {
+        const findRes = await fetch(`https://api.themoviedb.org/3/find/${movie.id}?external_source=imdb_id&api_key=${TMDB_KEY}`);
+        const findData = await findRes.json();
+        
+        if (findData.movie_results && findData.movie_results.length > 0) {
+          tmdbId = findData.movie_results[0].id;
+          type = 'movie';
+        } else if (findData.tv_results && findData.tv_results.length > 0) {
+          tmdbId = findData.tv_results[0].id;
+          type = 'tv';
+        }
+      }
+
+      if (!tmdbId && movie.title) {
+        const searchRes = await fetch(`https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(movie.title)}&api_key=${TMDB_KEY}`);
+        const searchData = await searchRes.json();
+        if (searchData.results && searchData.results.length > 0) {
+          const firstValid = searchData.results.find(r => r.media_type === 'movie' || r.media_type === 'tv');
+          if (firstValid) {
+            tmdbId = firstValid.id;
+            type = firstValid.media_type;
+          }
+        }
       }
 
       if (tmdbId) {
-        const type = findData.movie_results && findData.movie_results.length > 0 ? 'movie' : 'tv';
         const mediaRes = await fetch(`https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,images`);
         const mediaData = await mediaRes.json();
         
@@ -1269,7 +1379,6 @@ export default function App() {
       const query = encodeURIComponent(`${movie.title} ${movie.year}`);
       const targetUrl = `https://apibay.org/q.php?q=${query}`;
 
-      // Multi-proxy fallback: try each CORS proxy in order until one works
       const proxies = [
         (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
         (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
@@ -1289,7 +1398,7 @@ export default function App() {
           clearTimeout(timeout);
           const text = await response.text();
           data = JSON.parse(text);
-          break; // Success — stop trying proxies
+          break; 
         } catch (proxyErr) {
           lastError = proxyErr;
           console.warn("Proxy failed, trying next...", proxyErr.message);
@@ -1343,7 +1452,7 @@ export default function App() {
     try {
       const saved = localStorage.getItem('cinerama_watchlist');
       return saved ? JSON.parse(saved) : [];
-    } catch (e) {
+    } catch (_) {
       return [];
     }
   });
@@ -1392,12 +1501,10 @@ export default function App() {
       const response = await fetch(`${BASE_URL}?s=${encodeURIComponent(query)}${typeParam}`);
       let jsonData = await response.json();
 
-      // AWS Lambda Proxy fallback parsing in case of double-stringify bugs
       if (typeof jsonData === 'string') {
         jsonData = JSON.parse(jsonData);
       }
 
-      // Map OMDB Proxy data to our frontend format
       if (jsonData.Search) {
         data = jsonData.Search.map(m => {
           const hasImage = m.Poster !== 'N/A' && m.Poster;
@@ -1408,12 +1515,11 @@ export default function App() {
             director: 'Unknown',
             synopsis: 'Details fetched via AWS API',
             rating: 0,
-            genres: [], // Fallback to prevent React crash on render
+            genres: [],
             image: hasImage ? m.Poster : null
           };
         });
 
-        // Sort to push movies without images to the end of the list
         data.sort((a, b) => {
           if (a.image && !b.image) return -1;
           if (!a.image && b.image) return 1;
@@ -1422,14 +1528,13 @@ export default function App() {
       }
 
       if (data.length === 0) {
-        data = MOCK_DATA; // Fallback so UI doesn't break on bad searches
+        data = MOCK_DATA;
       }
     } catch (err) {
       console.error("AWS Fetch Error:", err);
       data = MOCK_DATA;
     }
 
-    // Slight delay for smooth UI fade
     await new Promise(resolve => setTimeout(resolve, 600));
     setMovies(data);
     setLoading(false);
@@ -1448,12 +1553,10 @@ export default function App() {
       'thing', 'saw', 'ring', 'conjuring', 'insidious', 'sinister'
     ];
 
-    // Shuffle and randomly select 3 diverse terms to prevent browser rate-limiting (Failed to fetch bug)
     const shuffled = diverseList.sort(() => 0.5 - Math.random());
     const selected = shuffled.slice(0, 3);
 
     try {
-      // Use Promise.allSettled so if 1 request fails, the other 2 still succeed
       const promises = selected.map(term => fetch(`${BASE_URL}?s=${encodeURIComponent(term)}`).then(r => r.json()));
       const results = await Promise.allSettled(promises);
 
@@ -1468,7 +1571,6 @@ export default function App() {
         }
       });
 
-      // Shuffle the combined pool of ~30 movies and pick 10 unique ones
       const finalMixed = [];
       allFound.sort(() => 0.5 - Math.random());
       for (const m of allFound) {
@@ -1495,6 +1597,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     loadCompletelyRandomMixedCollection();
   }, []);
 
@@ -1514,7 +1617,6 @@ export default function App() {
       setOverlayOpen(true);
       setTimeout(() => setShowRating(true), 300);
     });
-    // Recommender System: Background Fetch related movies
     setRecommendations([]);
     const titleWords = movie.title.split(' ').map(w => w.replace(/[^a-zA-Z0-9]/g, '')).filter(w => w.length > 3);
     const searchKeyword = titleWords[0] || movie.title.split(' ')[0];
@@ -1539,9 +1641,8 @@ export default function App() {
       })
       .catch(e => console.error("Recommender fetch failed", e));
 
-    fetchTMDBMedia(movie.id);
+    fetchTMDBMedia(movie);
     
-    // On-the-fly fetch for full Director and Synopsis data
     if (movie.director === 'Unknown' || movie.synopsis.includes('fetched via AWS')) {
       try {
         const OMDB_KEY = import.meta.env.VITE_OMDB_KEY;
@@ -1561,12 +1662,10 @@ export default function App() {
           };
 
           setSelectedMovie(prev => {
-            // Ensure they haven't closed the overlay while it was fetching
             if (!prev || prev.id !== movie.id) return prev;
             return { ...prev, ...newDetails };
           });
 
-          // Persist the fetched details into the main movies array so it survives closing
           setMovies(currentMovies =>
             currentMovies.map(m => m.id === movie.id ? { ...m, ...newDetails } : m)
           );
@@ -1833,44 +1932,57 @@ export default function App() {
                     <ParallaxPoster image={selectedMovie.image} title={selectedMovie.title} />
                   </div>
                   
-                  {/* Media Section */}
-                  {(tmdbLoading || tmdbMedia) && (
-                    <div className="media-card view-transition">
-                      <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', letterSpacing: '0.15em', marginBottom: '1.5rem', color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem' }}>
-                        MEDIA & GALLERY
-                      </h3>
-                      {tmdbMedia?.trailer && (
-                        <div 
-                          className="video-container" 
-                          style={{ position: 'relative', cursor: 'pointer' }}
-                          onClick={() => setPreviewMedia({ type: 'video', url: `https://www.youtube.com/embed/${tmdbMedia.trailer.key}?autoplay=1` })}
-                        >
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10 }} />
-                          <iframe 
-                            src={`https://www.youtube.com/embed/${tmdbMedia.trailer.key}?rel=0`} 
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                            allowFullScreen
-                            title="Trailer"
-                            style={{ pointerEvents: 'none' }}
+                  <div className="media-card view-transition">
+                    <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '0.75rem', letterSpacing: '0.15em', marginBottom: '1.5rem', color: 'var(--text-primary)', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.75rem' }}>
+                      MEDIA & GALLERY
+                    </h3>
+                    
+                    {tmdbLoading && (
+                      <div className="media-loading">
+                        <div className="media-loading-dot"></div>
+                        <div className="media-loading-dot"></div>
+                        <div className="media-loading-dot"></div>
+                      </div>
+                    )}
+
+                    {!tmdbLoading && tmdbMedia?.trailer && (
+                      <div 
+                        className="video-container" 
+                        style={{ position: 'relative', cursor: 'pointer' }}
+                        onClick={() => setPreviewMedia({ type: 'video', url: `https://www.youtube.com/embed/${tmdbMedia.trailer.key}?autoplay=1` })}
+                      >
+                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10 }} />
+                        <iframe 
+                          src={`https://www.youtube.com/embed/${tmdbMedia.trailer.key}?rel=0`} 
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                          allowFullScreen
+                          title="Trailer"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                      </div>
+                    )}
+                    
+                    {!tmdbLoading && tmdbMedia?.backdrops?.length > 0 && (
+                      <div className="gallery-container">
+                        {tmdbMedia.backdrops.map((img, i) => (
+                          <img 
+                            key={i} 
+                            src={`https://image.tmdb.org/t/p/w500${img.file_path}`} 
+                            alt="Screenshot" 
+                            className="gallery-img" 
+                            onClick={() => setPreviewMedia({ type: 'image', url: `https://image.tmdb.org/t/p/original${img.file_path}` })}
                           />
-                        </div>
-                      )}
-                      
-                      {tmdbMedia?.backdrops?.length > 0 && (
-                        <div className="gallery-container">
-                          {tmdbMedia.backdrops.map((img, i) => (
-                            <img 
-                              key={i} 
-                              src={`https://image.tmdb.org/t/p/w500${img.file_path}`} 
-                              alt="Screenshot" 
-                              className="gallery-img" 
-                              onClick={() => setPreviewMedia({ type: 'image', url: `https://image.tmdb.org/t/p/original${img.file_path}` })}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
+
+                    {!tmdbLoading && (!tmdbMedia || (!tmdbMedia.trailer && (!tmdbMedia.backdrops || tmdbMedia.backdrops.length === 0))) && (
+                      <div className="media-empty">
+                        <div className="media-empty-icon">🎬</div>
+                        <div className="media-empty-text">No trailers or stills available for this title</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="overlay-right">
